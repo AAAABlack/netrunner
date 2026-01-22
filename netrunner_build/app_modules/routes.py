@@ -1,0 +1,131 @@
+from fastapi import APIRouter, HTTPException, Request
+import json
+from datetime import datetime, timezone
+from .config import api, port_service_map
+import socket
+
+router = APIRouter()
+
+@router.post('/api/scan')
+async def scan(request: Request):
+    """Endpoint to scan an IP address or hostname using Shodan API"""
+    if api is None:
+        raise HTTPException(status_code=500, detail='Shodan API not initialized')
+    try:
+        data = await request.json()
+        address = data.get('host')
+        
+        if not address:
+            raise HTTPException(status_code=400, detail='No host provided')
+
+        # DNS resolution
+        try:
+            # parse as an IP first, even if it isn't
+            socket.inet_aton(address)
+            resolved_ip = address
+        except socket.error:
+            # resolving a hostname if not an IP (no need for nslookup on cmd anymore)
+            try:
+                resolved_ip = socket.gethostbyname(address)
+            except socket.gaierror:
+                raise HTTPException(status_code=400, detail=f'Could not resolve hostname: {address}')
+        
+        # querying the Shodan API with resolved IP
+        answer = api.host(resolved_ip)
+        
+        # extracting services
+        services = {}
+        for entry in answer.get("data", []):
+            port = entry.get("port")
+            transport = entry.get("transport", "tcp")
+            service_name = entry.get("service", "unknown")
+            
+            # look up protocol and service from the official IANA CSV.
+            if port in port_service_map:
+                csv_data = port_service_map[port]
+                transport = csv_data['protocol']
+                if csv_data['service']:
+                    service_name = csv_data['service']
+                print(f"Port {port}: Found in CSV - service: {service_name}, protocol: {transport}")
+            else:
+                print(f"Port {port}: NOT found in CSV")
+            
+            key = f"{port}/{transport}"
+            
+            if key not in services:
+                services[key] = {
+                    "port": port,
+                    "transport": transport,
+                    "service": service_name,
+                    "product": entry.get("product", "Unknown"),
+                    "version": entry.get("version", "Unknown"),
+                    "banner": entry.get("banner", "")[:150]
+                }
+        
+        # extract vulns
+        vulns_raw = answer.get("vulns", {})
+        vulnerabilities = []
+        
+        if isinstance(vulns_raw, dict):
+            for cve_id, details in vulns_raw.items():
+                vulnerabilities.append({
+                    "cve": cve_id,
+                    "cvss": details.get("cvss"),
+                    "verified": details.get("verified", False),
+                    "summary": details.get("summary", "")
+                })
+        elif isinstance(vulns_raw, list):
+            for cve_id in vulns_raw:
+                vulnerabilities.append({
+                    "cve": cve_id,
+                    "cvss": None,
+                    "verified": False,
+                    "summary": ""
+                })
+        
+        # cleaning and return response, important for formatting later
+        cleaned = {
+            "target": {
+                "ip": answer.get("ip_str"),
+                "hostnames": answer.get("hostnames", [])
+            },
+            "attribution": {
+                "organization": answer.get("org", "Unknown"),
+                "isp": answer.get("isp", "Unknown"),
+                "asn": answer.get("asn", "Unknown")
+            },
+            "geolocation": {
+                "country": answer.get("country_name", "Unknown"),
+                "region": answer.get("region_code", "Unknown"),
+                "city": answer.get("city", "Unknown")
+            },
+            "system": {
+                "os": answer.get("os", "Unknown")
+            },
+            "network_exposure": {
+                "ports": sorted(answer.get("ports", [])),
+                "services": list(services.values())
+            },
+            "security_context": {
+                "tags": answer.get("tags", []),
+                "vulns_present": len(vulnerabilities) > 0,
+                "vulnerabilities": vulnerabilities
+            },
+            "scan_metadata": {
+                "data_source": "Shodan",
+                "scan_timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "summary": {
+                "total_ports": len(answer.get("ports", [])),
+                "total_services": len(services),
+                "identified_products": len(
+                    {s["product"] for s in services.values() if s["product"] != "Unknown"}
+                ),
+                "vulnerability_count": len(vulnerabilities)
+            }
+        }
+        
+        return cleaned
+        
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
