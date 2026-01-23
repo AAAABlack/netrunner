@@ -3,66 +3,73 @@ import json
 from datetime import datetime, timezone
 from .config import api, port_service_map, scans_collection
 import socket
+import time
 
 router = APIRouter()
 
 @router.post('/api/scan')
 async def scan(request: Request):
     """Endpoint to scan an IP address or hostname using Shodan API"""
+
+    # in-app rate limitting
+    if not hasattr(scan, "last_call"):
+        scan.last_call = 0.0
+
+    now = time.time()
+    if now - scan.last_call < 5:
+        raise HTTPException(status_code=429, detail="You're scanning too fast!")
+
+    scan.last_call = now
+
     if api is None:
         raise HTTPException(status_code=500, detail='Shodan API not initialized')
+
     try:
         data = await request.json()
         address = data.get('host')
         force_rescan = data.get('force_rescan', False)
-        
+
         if not address:
             raise HTTPException(status_code=400, detail='No host provided')
 
         # DNS resolution
         try:
-            # parse as an IP first, even if it isn't
             socket.inet_aton(address)
             resolved_ip = address
         except socket.error:
-            # resolving a hostname if not an IP (no need for nslookup on cmd anymore)
             try:
                 resolved_ip = socket.gethostbyname(address)
             except socket.gaierror:
-                raise HTTPException(status_code=400, detail=f'Could not resolve hostname: {address}')
-        
-        # Check MongoDB for cached scan if not forcing rescan
+                raise HTTPException(
+                    status_code=400,
+                    detail=f'Could not resolve hostname: {address}'
+                )
+
+        # checking MongoDB for cached scan if not forcing rescan
         if not force_rescan and scans_collection is not None:
             cached_scan = scans_collection.find_one({"target.ip": resolved_ip})
             if cached_scan:
-                # Remove MongoDB _id field before returning
                 cached_scan.pop('_id', None)
-                # Add a flag to indicate this is cached data
                 cached_scan['cached'] = True
                 return cached_scan
-        
-        # querying the Shodan API with resolved IP
+
+        # query Shodan API
         answer = api.host(resolved_ip)
-        
-        # extracting services
+
+            # look up protocol and service from the official IANA CSV.
         services = {}
         for entry in answer.get("data", []):
             port = entry.get("port")
             transport = entry.get("transport", "tcp")
             service_name = entry.get("service", "unknown")
-            
-            # look up protocol and service from the official IANA CSV.
+
             if port in port_service_map:
                 csv_data = port_service_map[port]
                 transport = csv_data['protocol']
                 if csv_data['service']:
                     service_name = csv_data['service']
-                print(f"Port {port}: Found in CSV - service: {service_name}, protocol: {transport}")
-            else:
-                print(f"Port {port}: NOT found in CSV")
-            
+
             key = f"{port}/{transport}"
-            
             if key not in services:
                 services[key] = {
                     "port": port,
@@ -72,11 +79,11 @@ async def scan(request: Request):
                     "version": entry.get("version", "Unknown"),
                     "banner": entry.get("banner", "")[:150]
                 }
-        
-        # extract vulns
+
+        # extract vulnerabilities
         vulns_raw = answer.get("vulns", {})
         vulnerabilities = []
-        
+
         if isinstance(vulns_raw, dict):
             for cve_id, details in vulns_raw.items():
                 vulnerabilities.append({
@@ -93,7 +100,6 @@ async def scan(request: Request):
                     "verified": False,
                     "summary": ""
                 })
-        
         # cleaning and return response, important for formatting later
         cleaned = {
             "target": {
@@ -136,26 +142,23 @@ async def scan(request: Request):
             },
             "cached": False
         }
-        
-        # Save to MongoDB
+
         if scans_collection is not None:
             try:
-                # Update if exists, insert if not (upsert)
                 scans_collection.update_one(
                     {"target.ip": cleaned["target"]["ip"]},
                     {"$set": cleaned},
                     upsert=True
                 )
-                print(f"Saved scan for {cleaned['target']['ip']} to MongoDB")
             except Exception as e:
                 print(f"Error saving to MongoDB: {e}")
-        
+
         return cleaned
-        
+
     except HTTPException:
         raise
     except Exception as e:
         import traceback
         print(f"Error in scan endpoint: {e}")
         print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal error")
