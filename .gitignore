@@ -3,6 +3,7 @@
 *.env
 secret/
 
+
 # Python
 __pycache__/
 *.py[cod]
@@ -11,6 +12,7 @@ __pycache__/
 .Python
 venv/
 .venv/
+.venv-netrunner/
 env/
 ENV/
 pyvenv.cfg
