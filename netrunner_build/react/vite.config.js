@@ -15,10 +15,14 @@ export default defineConfig({
     emptyOutDir: false,
     rollupOptions: {
       output: {
-        dir: '../static',
         entryFileNames: 'assets/index.js',
         chunkFileNames: 'assets/index.js',
-        assetFileNames: 'assets/index.css'
+        assetFileNames: (assetInfo) => {
+          if (assetInfo.name.endsWith('.css')) {
+            return 'assets/index3.css';
+          }
+          return 'assets/[name].[ext]';
+        }
       }
     }
   }

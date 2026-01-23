@@ -6,14 +6,13 @@ import os
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
-app.mount("/assets", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static", "assets")), name="assets")
-templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
+templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "static"))
 from app_modules.routes import router
 app.include_router(router)
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    return templates.TemplateResponse('home.html', {"request": request})
+    return templates.TemplateResponse('index.html', {"request": request})
 
 if __name__ == '__main__':
     import uvicorn
