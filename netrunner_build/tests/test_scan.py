@@ -130,3 +130,6 @@ class TestScanEndpoint(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+# note to self,how to run: python -m pytest test_scan.py -v
+
