@@ -12,18 +12,7 @@ export default defineConfig({
   },
   build: {
     outDir: '../static',
-    emptyOutDir: false,
-    rollupOptions: {
-      output: {
-        entryFileNames: 'assets/index.js',
-        chunkFileNames: 'assets/index.js',
-        assetFileNames: (assetInfo) => {
-          if (assetInfo.name.endsWith('.css')) {
-            return 'assets/index3.css';
-          }
-          return 'assets/[name].[ext]';
-        }
-      }
-    }
+    // keep the outDir stable but let Vite emit hashed filenames so browsers pick up fresh builds
+    emptyOutDir: false
   }
 })
