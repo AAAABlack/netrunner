@@ -39,6 +39,34 @@ function App() {
     }
   }
 
+  const handleRescan = async () => {
+    if (!host) return
+
+    setLoading(true)
+    setError('')
+
+    try {
+      const response = await fetch('/api/scan', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ host, force_rescan: true }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Error: ${response.status}`)
+      }
+
+      const data = await response.json()
+      setResults(data)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="app">
       {/* Top Header */}
@@ -103,7 +131,43 @@ function App() {
             {error && <p style={{ color: 'red' }}>{error}</p>}
             {results && (
               <div>
-                <h3>Scan Results for {host}</h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <h3>Scan Results for {host}</h3>
+                  <button 
+                    onClick={handleRescan}
+                    disabled={loading}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      backgroundColor: '#007bff',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: loading ? 'not-allowed' : 'pointer',
+                      fontSize: '0.9rem'
+                    }}
+                  >
+                    {loading ? 'Re-scanning...' : 'Re-scan'}
+                  </button>
+                </div>
+                
+                {results.cached && (
+                  <div style={{ 
+                    backgroundColor: '#fff3cd', 
+                    padding: '0.75rem', 
+                    borderRadius: '4px', 
+                    marginBottom: '1rem',
+                    border: '1px solid #ffc107',
+                    color: '#856404'
+                  }}>
+                    ℹ️ <strong>Cached Results:</strong> This data was retrieved from the database. Click "Re-scan" for fresh data.
+                  </div>
+                )}
+                
+                {results.scan_metadata && results.scan_metadata.scan_timestamp && (
+                  <div style={{ marginBottom: '1rem', color: '#666', fontSize: '0.9rem' }}>
+                    <strong>Last scanned:</strong> {new Date(results.scan_metadata.scan_timestamp).toLocaleString()}
+                  </div>
+                )}
                 
                 {/* Target Information */}
                 {results.target && (

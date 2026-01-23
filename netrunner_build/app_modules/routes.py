@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 import json
 from datetime import datetime, timezone
-from .config import api, port_service_map
+from .config import api, port_service_map, scans_collection
 import socket
 
 router = APIRouter()
@@ -14,6 +14,7 @@ async def scan(request: Request):
     try:
         data = await request.json()
         address = data.get('host')
+        force_rescan = data.get('force_rescan', False)
         
         if not address:
             raise HTTPException(status_code=400, detail='No host provided')
@@ -29,6 +30,16 @@ async def scan(request: Request):
                 resolved_ip = socket.gethostbyname(address)
             except socket.gaierror:
                 raise HTTPException(status_code=400, detail=f'Could not resolve hostname: {address}')
+        
+        # Check MongoDB for cached scan if not forcing rescan
+        if not force_rescan and scans_collection is not None:
+            cached_scan = scans_collection.find_one({"target.ip": resolved_ip})
+            if cached_scan:
+                # Remove MongoDB _id field before returning
+                cached_scan.pop('_id', None)
+                # Add a flag to indicate this is cached data
+                cached_scan['cached'] = True
+                return cached_scan
         
         # querying the Shodan API with resolved IP
         answer = api.host(resolved_ip)
@@ -122,10 +133,29 @@ async def scan(request: Request):
                     {s["product"] for s in services.values() if s["product"] != "Unknown"}
                 ),
                 "vulnerability_count": len(vulnerabilities)
-            }
+            },
+            "cached": False
         }
+        
+        # Save to MongoDB
+        if scans_collection is not None:
+            try:
+                # Update if exists, insert if not (upsert)
+                scans_collection.update_one(
+                    {"target.ip": cleaned["target"]["ip"]},
+                    {"$set": cleaned},
+                    upsert=True
+                )
+                print(f"Saved scan for {cleaned['target']['ip']} to MongoDB")
+            except Exception as e:
+                print(f"Error saving to MongoDB: {e}")
         
         return cleaned
         
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        import traceback
+        print(f"Error in scan endpoint: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))

@@ -2,13 +2,44 @@ from shodan import Shodan
 from dotenv import load_dotenv
 import os
 import csv
+from pymongo import MongoClient
+from datetime import datetime, timezone
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '..', 'secret', '.env'))
+env_path = os.path.join(os.path.dirname(__file__), '..', '..', 'secret', '.env')
+load_dotenv(dotenv_path=env_path)
+api_key = os.getenv("api_key")
+
+if api_key:
+    api_key = api_key.strip()
+
 try:
-    api = Shodan(os.getenv("api_key"))  # initializing Shodan API
+    api = Shodan(api_key) if api_key else None
+    if api:
+        api.info()
+        print("✓ Shodan API initialized")
+    else:
+        print("⚠ Shodan API key not configured")
+        api = None
 except Exception as e:
-    print(f"Error initializing Shodan API: {e}")
+    print(f"⚠ Shodan API unavailable: {e}")
     api = None
+
+# MongoDB connection
+try:
+    mongo_client = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=2000)
+    # Test the connection
+    mongo_client.server_info()
+    mongo_db = mongo_client["netrunner"]
+    scans_collection = mongo_db["scans"]
+    print("✓ MongoDB connection established")
+except Exception as e:
+    print(f"⚠ Warning: MongoDB not available - {e}")
+    print("  The app will work without caching. To enable caching:")
+    print("  1. Install MongoDB from https://www.mongodb.com/try/download/community")
+    print("  2. Start MongoDB service")
+    mongo_client = None
+    mongo_db = None
+    scans_collection = None
 
 # here we load the official service ports CSV for protocol and service name lookup, got from IANA
 port_service_map = {}
