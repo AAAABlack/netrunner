@@ -24,7 +24,7 @@ Netrunner provides an easy dashboard for exploring exposed services, identifying
 
 Understanding exposed services is an important part of security assessments and defensive operations.
 
-Rather than interacting directly with multiple command-line tools or raw API responses, I wanted to create a single interface that presents reconnaissance data in a structured and easy-to-read format while also giving me an opportunity to improve my backend development skills.
+Rather than interacting directly with  CLI tools or raw API responses, I wanted to create a single interface that presents reconnaissance data in a structured and easy-to-read format while also giving me an opportunity to improve my backend development skills.
 
 ---
 
@@ -45,12 +45,12 @@ This project is still actively being developed.
 Some planned additions include:
 
 - PDF report exporting
-- JSON and CSV export support
 - Improved dashboard design
+- JSON and CSV export support
 - Enhanced vulnerability summaries
+- Enhanced summaries in general
 - Additional intelligence providers
 - Performance improvements
-- Expanded scan history
 
 ---
 
